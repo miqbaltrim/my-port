@@ -2,13 +2,15 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use App\Models\Project;
+
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\Admin\StoreProjectRequest;
 use App\Http\Requests\Api\V1\Admin\UpdateProjectRequest;
 use App\Http\Resources\V1\ProjectResource;
-use App\Models\Project;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 
 class ProjectController extends Controller
 {
@@ -22,25 +24,68 @@ class ProjectController extends Controller
         return ProjectResource::collection($projects);
     }
 
-    public function store(StoreProjectRequest $request)
+    public function store(\Illuminate\Http\Request $request)
     {
-        $data = $request->validated();
+        $data = $request->validate([
+            'title' => ['required','string','max:190'],
+            'excerpt' => ['nullable','string','max:255'],
+            'content' => ['nullable','string'],
+            'thumbnail' => ['nullable','string','max:190'],
+            'demo_url' => ['nullable','string','max:190'],
+            'repo_url' => ['nullable','string','max:190'],
+            'seo_title' => ['nullable','string','max:190'],
+            'seo_description' => ['nullable','string','max:255'],
+            'status' => ['required','in:draft,published'],
+            'is_featured' => ['boolean'],
+            'sort_order' => ['integer'],
 
-        $data['slug'] = $data['slug'] ?? Str::slug($data['title']);
+            // relation
+            'tags' => ['array'],
+            'tags.*' => ['integer','exists:tags,id'],
 
-        if ($request->hasFile('thumbnail')) {
-            $data['thumbnail'] = $request->file('thumbnail')->store('projects/thumbnails', 'public');
-        }
+            'images' => ['array'],
+            'images.*.image_path' => ['required','string','max:190'],
+            'images.*.caption' => ['nullable','string','max:190'],
+            'images.*.sort_order' => ['nullable','integer'],
+        ]);
 
-        $project = Project::create($data);
+        return DB::transaction(function () use ($data) {
+            $projectData = $data;
+            unset($projectData['tags'], $projectData['images']);
 
-        if (isset($data['tag_ids'])) {
-            $project->tags()->sync($data['tag_ids']);
-        }
+            // slug otomatis
+            $projectData['slug'] = Str::slug($projectData['title']);
+            // published_at otomatis jika published
+            if (($projectData['status'] ?? 'draft') === 'published') {
+                $projectData['published_at'] = now();
+            } else {
+                $projectData['published_at'] = null;
+            }
 
-        return (new ProjectResource($project->load(['tags','images'])))
-            ->response()
-            ->setStatusCode(201);
+            $project = Project::create($projectData);
+
+            // pivot tags
+            if (!empty($data['tags'])) {
+                $project->tags()->sync($data['tags']);
+            }
+
+            // images
+            if (!empty($data['images'])) {
+                $imgs = array_map(function ($img, $i) {
+                    return [
+                        'image_path' => $img['image_path'],
+                        'caption' => $img['caption'] ?? null,
+                        'sort_order' => $img['sort_order'] ?? $i,
+                    ];
+                }, $data['images'], array_keys($data['images']));
+
+                $project->images()->createMany($imgs);
+            }
+
+            return response()->json([
+                'data' => $project->load(['tags','images']),
+            ], 201);
+        });
     }
 
     public function show(Project $project)
@@ -48,31 +93,69 @@ class ProjectController extends Controller
         return new ProjectResource($project->load(['tags','images']));
     }
 
-    public function update(UpdateProjectRequest $request, Project $project)
+    public function update(\Illuminate\Http\Request $request, Project $project)
     {
-        $data = $request->validated();
+        $data = $request->validate([
+            'title' => ['sometimes','required','string','max:190'],
+            'excerpt' => ['nullable','string','max:255'],
+            'content' => ['nullable','string'],
+            'thumbnail' => ['nullable','string','max:190'],
+            'demo_url' => ['nullable','string','max:190'],
+            'repo_url' => ['nullable','string','max:190'],
+            'seo_title' => ['nullable','string','max:190'],
+            'seo_description' => ['nullable','string','max:255'],
+            'status' => ['sometimes','required','in:draft,published'],
+            'is_featured' => ['boolean'],
+            'sort_order' => ['integer'],
 
-        if (isset($data['title']) && !isset($data['slug'])) {
-            // optional: auto-update slug kalau user ganti title tanpa slug
-            $data['slug'] = Str::slug($data['title']);
-        }
+            'tags' => ['array'],
+            'tags.*' => ['integer','exists:tags,id'],
 
-        if ($request->hasFile('thumbnail')) {
-            $data['thumbnail'] = $request->file('thumbnail')->store('projects/thumbnails', 'public');
-        }
+            'images' => ['array'],
+            'images.*.image_path' => ['required','string','max:190'],
+            'images.*.caption' => ['nullable','string','max:190'],
+            'images.*.sort_order' => ['nullable','integer'],
+        ]);
 
-        $project->update($data);
+        return DB::transaction(function () use ($data, $project) {
+            $projectData = $data;
+            $hasTags = array_key_exists('tags', $data);
+            $hasImages = array_key_exists('images', $data);
 
-        if (array_key_exists('tag_ids', $data)) {
-            $project->tags()->sync($data['tag_ids'] ?? []);
-        }
+            unset($projectData['tags'], $projectData['images']);
 
-        return new ProjectResource($project->load(['tags','images']));
-    }
+            if (isset($projectData['title'])) {
+                $projectData['slug'] = Str::slug($projectData['title']);
+            }
 
-    public function destroy(Project $project)
-    {
-        $project->delete();
-        return response()->json(['message' => 'Project deleted']);
+            if (isset($projectData['status'])) {
+                $projectData['published_at'] = $projectData['status'] === 'published' ? now() : null;
+            }
+
+            $project->update($projectData);
+
+            if ($hasTags) {
+                $project->tags()->sync($data['tags'] ?? []);
+            }
+
+            // cara simpel & aman: replace images
+            if ($hasImages) {
+                $project->images()->delete();
+
+                $imgs = array_map(function ($img, $i) {
+                    return [
+                        'image_path' => $img['image_path'],
+                        'caption' => $img['caption'] ?? null,
+                        'sort_order' => $img['sort_order'] ?? $i,
+                    ];
+                }, $data['images'] ?? [], array_keys($data['images'] ?? []));
+
+                if ($imgs) $project->images()->createMany($imgs);
+            }
+
+            return response()->json([
+                'data' => $project->fresh()->load(['tags','images']),
+            ]);
+        });
     }
 }

@@ -12,7 +12,9 @@ class TagController extends Controller
      */
     public function index()
     {
-        //
+        return response()->json([
+            'data' => \App\Models\Tag::query()->orderBy('name')->get(['id','name','slug']),
+        ]);
     }
 
     /**
