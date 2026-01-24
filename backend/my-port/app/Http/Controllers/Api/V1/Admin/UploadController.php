@@ -7,47 +7,29 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
-
 class UploadController extends Controller
 {
-    /**
-     * POST /api/v1/admin/uploads/project-image
-     * form-data: file=<image>
-     */
     public function projectImage(Request $request)
     {
-        // Validasi ketat: image only
         $validated = $request->validate([
-            'file' => [
-                'required',
-                'file',
-                'image',
-                'mimes:jpg,jpeg,png,webp,gif',
-                'max:5120', // KB => 5MB
-            ],
+            'file' => ['required','image','mimes:jpg,jpeg,png,webp,gif','max:5120'],
         ]);
 
         $file = $validated['file'];
 
-        // Aman: folder fixed (hindari user input)
         $dir = 'projects';
-
-        // Nama file aman + unik
         $ext = strtolower($file->getClientOriginalExtension() ?: 'jpg');
-        $filename = Str::uuid()->toString() . '.' . $ext;
+        $filename = (string) Str::uuid() . '.' . $ext;
 
-        // Simpan di disk public
-        $path = $file->storeAs($dir, $filename, 'public'); // projects/uuid.png
+        // simpan ke storage/app/public/projects/xxx.jpg
+        $path = $file->storeAs($dir, $filename, 'public'); // projects/xxx.jpg
 
-        // URL dari storage (lebih konsisten)
-        $absoluteUrl = asset('storage/' . $path);
+        // ✅ ini biasanya tidak merah di IDE (jelas)
+        $url = asset('storage/' . $path); // http://127.0.0.1:8000/storage/projects/xxx.jpg
 
         return response()->json([
-        'path' => $path,
-        'url'  => $absoluteUrl,
-        'mime' => $file->getMimeType(),
-        'size' => $file->getSize(),
+            'path' => $path,
+            'url'  => $url,
         ], 201);
-
     }
 }

@@ -1,8 +1,10 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
 
 export default function AdminLayout() {
   const nav = useNavigate();
+  const [stats, setStats] = useState({ tags: null });
 
   async function logout() {
     try {
@@ -12,14 +14,39 @@ export default function AdminLayout() {
     nav("/admin/login", { replace: true });
   }
 
+  // optional: ambil total tags untuk badge (aman kalau error)
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await api.get("/admin/tags");
+        const total = res?.data?.meta?.total ?? res?.data?.data?.length ?? null;
+        if (!alive) return;
+        setStats((s) => ({ ...s, tags: total }));
+      } catch {
+        if (!alive) return;
+        setStats((s) => ({ ...s, tags: null }));
+      }
+    })();
+    return () => (alive = false);
+  }, []);
+
   const linkBase =
     "flex items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold transition";
   const linkInactive = "text-white/70 hover:bg-white/8 hover:text-white";
   const linkActive = "bg-white/10 text-white border border-white/10";
 
+  const navItems = [
+    { to: "/admin", label: "Dashboard", end: true },
+    { to: "/admin/profile", label: "Profile" },
+    { to: "/admin/projects", label: "Projects" },
+    { to: "/admin/skills", label: "Skills" },
+    { to: "/admin/tags", label: "Tags", badge: stats.tags },
+  ];
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-neutral-950 text-white">
-      {/* Background neon + grid (sama vibe login) */}
+      {/* Background neon + grid */}
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute -top-40 left-[-120px] h-[520px] w-[520px] rounded-full bg-indigo-500/18 blur-[95px]" />
         <div className="absolute -bottom-44 right-[-140px] h-[560px] w-[560px] rounded-full bg-emerald-500/14 blur-[115px]" />
@@ -64,42 +91,26 @@ export default function AdminLayout() {
               </div>
 
               <nav className="grid gap-2">
-                <NavLink
-                  to="/admin"
-                  end
-                  className={({ isActive }) =>
-                    `${linkBase} ${isActive ? linkActive : linkInactive}`
-                  }
-                >
-                  Dashboard <span className="text-white/30">⌁</span>
-                </NavLink>
-
-                <NavLink
-                  to="/admin/profile"
-                  className={({ isActive }) =>
-                    `${linkBase} ${isActive ? linkActive : linkInactive}`
-                  }
-                >
-                  Profile <span className="text-white/30">⌁</span>
-                </NavLink>
-
-                <NavLink
-                  to="/admin/projects"
-                  className={({ isActive }) =>
-                    `${linkBase} ${isActive ? linkActive : linkInactive}`
-                  }
-                >
-                  Projects <span className="text-white/30">⌁</span>
-                </NavLink>
-
-                <NavLink
-                  to="/admin/skills"
-                  className={({ isActive }) =>
-                    `${linkBase} ${isActive ? linkActive : linkInactive}`
-                  }
-                >
-                  Skills <span className="text-white/30">⌁</span>
-                </NavLink>
+                {navItems.map((it) => (
+                  <NavLink
+                    key={it.to}
+                    to={it.to}
+                    end={it.end}
+                    className={({ isActive }) =>
+                      `${linkBase} ${isActive ? linkActive : linkInactive}`
+                    }
+                  >
+                    <span className="flex items-center gap-2">
+                      {it.label}
+                      {typeof it.badge === "number" && (
+                        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/70">
+                          {it.badge}
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-white/30">⌁</span>
+                  </NavLink>
+                ))}
               </nav>
 
               <div className="mt-4 px-2">
@@ -109,16 +120,25 @@ export default function AdminLayout() {
               </div>
 
               <div className="mt-2 grid gap-2">
-                {["Tags", "Experiences", "Educations", "Testimonials", "Social Links", "Contact Messages"].map(
-                  (x) => (
-                    <div
-                      key={x}
-                      className="rounded-xl border border-dashed border-white/15 bg-white/0 px-3 py-2 text-sm text-white/45"
-                    >
-                      {x}
-                    </div>
-                  )
-                )}
+                {[
+                  "Experiences",
+                  "Educations",
+                  "Testimonials",
+                  "Social Links",
+                  "Contact Messages",
+                ].map((x) => (
+                  <div
+                    key={x}
+                    className="rounded-xl border border-dashed border-white/15 bg-white/0 px-3 py-2 text-sm text-white/45"
+                  >
+                    {x}
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs text-white/55">
+                Tip: Pastikan backend berjalan di{" "}
+                <span className="text-white/80">http://127.0.0.1:8000</span>
               </div>
             </div>
           </div>

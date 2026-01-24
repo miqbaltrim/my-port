@@ -39,47 +39,43 @@ class ProjectController extends Controller
             'is_featured' => ['boolean'],
             'sort_order' => ['integer'],
 
-            // relation
-            'tags' => ['array'],
+            // ✅ relation (opsional)
+            'tags' => ['sometimes','array'],
             'tags.*' => ['integer','exists:tags,id'],
 
-            'images' => ['array'],
-            'images.*.image_path' => ['required','string','max:190'],
+            // ✅ images (opsional)
+            'images' => ['sometimes','array'],
+            'images.*.image_path' => ['required_with:images','string','max:190'],
             'images.*.caption' => ['nullable','string','max:190'],
-            'images.*.sort_order' => ['nullable','integer'],
+            'images.*.sort_order' => ['nullable','integer','min:0'],
         ]);
 
         return DB::transaction(function () use ($data) {
             $projectData = $data;
             unset($projectData['tags'], $projectData['images']);
 
-            // slug otomatis
             $projectData['slug'] = Str::slug($projectData['title']);
-            // published_at otomatis jika published
-            if (($projectData['status'] ?? 'draft') === 'published') {
-                $projectData['published_at'] = now();
-            } else {
-                $projectData['published_at'] = null;
-            }
+            $projectData['published_at'] = (($projectData['status'] ?? 'draft') === 'published') ? now() : null;
 
             $project = Project::create($projectData);
 
-            // pivot tags
             if (!empty($data['tags'])) {
                 $project->tags()->sync($data['tags']);
             }
 
-            // images
             if (!empty($data['images'])) {
+                // ✅ buang item yang image_path kosong (extra safety)
+                $images = array_values(array_filter($data['images'], fn($img) => !empty($img['image_path'] ?? null)));
+
                 $imgs = array_map(function ($img, $i) {
                     return [
                         'image_path' => $img['image_path'],
                         'caption' => $img['caption'] ?? null,
                         'sort_order' => $img['sort_order'] ?? $i,
                     ];
-                }, $data['images'], array_keys($data['images']));
+                }, $images, array_keys($images));
 
-                $project->images()->createMany($imgs);
+                if ($imgs) $project->images()->createMany($imgs);
             }
 
             return response()->json([
@@ -108,13 +104,15 @@ class ProjectController extends Controller
             'is_featured' => ['boolean'],
             'sort_order' => ['integer'],
 
-            'tags' => ['array'],
+            // ✅ relation (opsional)
+            'tags' => ['sometimes','array'],
             'tags.*' => ['integer','exists:tags,id'],
 
-            'images' => ['array'],
-            'images.*.image_path' => ['required','string','max:190'],
+            // ✅ images (opsional)
+            'images' => ['sometimes','array'],
+            'images.*.image_path' => ['required_with:images','string','max:190'],
             'images.*.caption' => ['nullable','string','max:190'],
-            'images.*.sort_order' => ['nullable','integer'],
+            'images.*.sort_order' => ['nullable','integer','min:0'],
         ]);
 
         return DB::transaction(function () use ($data, $project) {
@@ -138,9 +136,11 @@ class ProjectController extends Controller
                 $project->tags()->sync($data['tags'] ?? []);
             }
 
-            // cara simpel & aman: replace images
+            // ✅ replace images hanya jika field images dikirim
             if ($hasImages) {
                 $project->images()->delete();
+
+                $images = array_values(array_filter($data['images'] ?? [], fn($img) => !empty($img['image_path'] ?? null)));
 
                 $imgs = array_map(function ($img, $i) {
                     return [
@@ -148,7 +148,7 @@ class ProjectController extends Controller
                         'caption' => $img['caption'] ?? null,
                         'sort_order' => $img['sort_order'] ?? $i,
                     ];
-                }, $data['images'] ?? [], array_keys($data['images'] ?? []));
+                }, $images, array_keys($images));
 
                 if ($imgs) $project->images()->createMany($imgs);
             }
@@ -158,4 +158,5 @@ class ProjectController extends Controller
             ]);
         });
     }
+
 }

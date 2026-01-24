@@ -46,8 +46,10 @@ Route::prefix('v1')->group(function () {
         Route::put('profile', [ProfileController::class, 'update']);
 
         Route::get('tags', [TagController::class, 'index']);
-
-        Route::post('uploads/project-image', [UploadController::class, 'projectImage']);
+        Route::apiResource('skills', SkillController::class);
+        Route::apiResource('tags', TagController::class);
+        
+        Route::post('/uploads/project-image', [UploadController::class, 'projectImage']);
         
 
     });
