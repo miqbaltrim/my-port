@@ -11,8 +11,9 @@ class Profile extends Model
         'headline',
         'location',
         'about',
+        'photo',
+        'cv_url',
         'email',
         'phone',
-        'cv_url',
     ];
 }

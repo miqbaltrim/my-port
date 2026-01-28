@@ -20,6 +20,7 @@ class ProfileController extends Controller
                 'headline' => '',
                 'location' => '',
                 'about' => '',
+                'photo' => null,
                 'email' => '',
                 'phone' => '',
                 'cv_url' => '',
@@ -38,6 +39,9 @@ class ProfileController extends Controller
             'headline'  => ['nullable','string','max:160'],
             'location'  => ['nullable','string','max:120'],
             'about'     => ['nullable','string'],
+
+            'photo'     => ['nullable','string','max:190'],
+
             'email'     => ['nullable','email','max:190'],
             'phone'     => ['nullable','string','max:50'],
             'cv_url'    => ['nullable','url','max:190'],

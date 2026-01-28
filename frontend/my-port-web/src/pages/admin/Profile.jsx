@@ -5,7 +5,9 @@ import { api } from "../../lib/api";
 function Field({ label, children }) {
   return (
     <div className="grid gap-2">
-      <label className="text-xs font-medium tracking-widest text-white/60">{label}</label>
+      <label className="text-xs font-medium tracking-widest text-white/60">
+        {label}
+      </label>
       {children}
     </div>
   );
@@ -38,19 +40,61 @@ function Textarea({ label, value, onChange, placeholder }) {
   );
 }
 
+/**
+ * ✅ Convert "profiles/xxx.jpg" -> "http://127.0.0.1:8000/storage/profiles/xxx.jpg"
+ * - kalau sudah URL full, return apa adanya
+ * - kalau sudah ada "/storage/", aman
+ */
+function toStorageUrl(path) {
+  if (!path) return "";
+  const p = String(path).trim();
+  if (!p) return "";
+
+  // sudah full URL
+  if (/^https?:\/\//i.test(p)) return p;
+
+  // base API (samakan dgn setup kamu)
+  const base = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+  const cleanBase = base.replace(/\/$/, "");
+
+  // buang prefix storage kalau user input /storage/...
+  const cleanPath = p.replace(/^\/?storage\/?/, "").replace(/^\//, "");
+
+  return `${cleanBase}/storage/${cleanPath}`;
+}
+
+async function uploadProfilePhoto(file) {
+  const fd = new FormData();
+  fd.append("file", file);
+
+  // ✅ endpoint upload profile photo
+  const res = await api.post("/admin/uploads/profile-photo", fd, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+
+  // expected { path, url }
+  return res.data;
+}
+
 export default function AdminProfile() {
   const [form, setForm] = useState({
     full_name: "",
     headline: "",
     location: "",
     about: "",
+    photo: "", // ✅ kolom photo
     email: "",
     phone: "",
     cv_url: "",
   });
 
+  // preview url (biar langsung tampil setelah upload)
+  const [photoPreview, setPhotoPreview] = useState("");
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
 
@@ -67,7 +111,12 @@ export default function AdminProfile() {
         const res = await api.get("/admin/profile");
         const data = res.data.data || res.data || {};
         if (!alive) return;
+
         setForm((prev) => ({ ...prev, ...data }));
+
+        // ✅ set preview dari path photo (kalau ada)
+        if (data?.photo) setPhotoPreview(toStorageUrl(data.photo));
+        else setPhotoPreview("");
       } catch (e) {
         if (!alive) return;
         setError(e?.response?.data?.message || "Gagal mengambil data profile");
@@ -81,7 +130,6 @@ export default function AdminProfile() {
     return () => (alive = false);
   }, []);
 
-  // ✅ ganti nama jadi setField (jangan pakai nama set)
   function setField(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
@@ -92,7 +140,12 @@ export default function AdminProfile() {
     setError("");
     setSaving(true);
     try {
-      await api.put("/admin/profile", form);
+      await api.put("/admin/profile", {
+        ...form,
+        // ✅ pastikan yang disimpan ke DB adalah PATH, bukan URL
+        photo: form.photo || null,
+      });
+
       setMsg("Tersimpan ✅");
       setTimeout(() => setMsg(""), 2500);
     } catch (e) {
@@ -102,10 +155,34 @@ export default function AdminProfile() {
     }
   }
 
-  // ✅ completeness pakai deferredForm (bukan form)
+  async function onPickPhoto(file) {
+    if (!file) return;
+    setUploading(true);
+    setError("");
+    setMsg("");
+    try {
+      const up = await uploadProfilePhoto(file);
+      // ✅ simpan path ke DB
+      setField("photo", up.path);
+      // ✅ preview pakai url dari server (paling akurat)
+      setPhotoPreview(up.url || toStorageUrl(up.path));
+    } catch (e) {
+      setError(e?.response?.data?.message || "Gagal upload photo");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function removePhoto() {
+    setField("photo", "");
+    setPhotoPreview("");
+  }
+
   const completeness = useMemo(() => {
     const fields = ["full_name", "headline", "location", "about", "email"];
-    const filled = fields.filter((k) => String(deferredForm[k] || "").trim().length > 0).length;
+    const filled = fields.filter(
+      (k) => String(deferredForm[k] || "").trim().length > 0
+    ).length;
     return Math.round((filled / fields.length) * 100);
   }, [deferredForm]);
 
@@ -119,9 +196,11 @@ export default function AdminProfile() {
             Profile Manager
           </div>
 
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight text-white">Profile</h1>
+          <h1 className="mt-3 text-2xl font-semibold tracking-tight text-white">
+            Profile
+          </h1>
           <p className="mt-1 text-sm text-white/55">
-            Atur identitas, headline, bio, dan kontak yang tampil di portfolio.
+            Atur identitas, headline, bio, kontak, dan photo yang tampil di portfolio.
           </p>
         </div>
 
@@ -153,13 +232,87 @@ export default function AdminProfile() {
           <div className="flex items-center justify-between">
             <div>
               <div className="text-sm font-semibold text-white">Edit Profile</div>
-              <div className="mt-1 text-xs text-white/45">Perubahan disimpan ke database (Laravel API).</div>
+              <div className="mt-1 text-xs text-white/45">
+                Perubahan disimpan ke database (Laravel API).
+              </div>
             </div>
 
             {loading && <div className="text-xs text-white/45">Loading...</div>}
           </div>
 
           <form onSubmit={save} className="mt-5 grid gap-4">
+            {/* ✅ PHOTO */}
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-white">Photo</div>
+                  <div className="mt-1 text-xs text-white/45">
+                    Upload JPG/PNG/WEBP/GIF (max 5MB). Disimpan ke kolom <b>photo</b>.
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {form.photo ? (
+                    <button
+                      type="button"
+                      onClick={removePhoto}
+                      className="rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-500/15"
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-[140px_1fr]">
+                <div className="flex items-center justify-center">
+                  <div className="h-28 w-28 overflow-hidden rounded-2xl border border-white/10 bg-black/30">
+                    {photoPreview ? (
+                      <img
+                        src={photoPreview}
+                        alt="profile"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
+                        No Photo
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid gap-3">
+                  <Input
+                    label="PHOTO PATH (DB)"
+                    value={form.photo}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setField("photo", v);
+                      setPhotoPreview(v ? toStorageUrl(v) : "");
+                    }}
+                    placeholder="profiles/xxxx.jpg"
+                  />
+
+                  <Field label="UPLOAD PHOTO">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      disabled={uploading}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) onPickPhoto(f);
+                        e.target.value = "";
+                      }}
+                      className="block w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-white/70 file:mr-3 file:rounded-xl file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-white file:hover:bg-white/15 disabled:opacity-60"
+                    />
+                    <div className="mt-2 text-xs text-white/45">
+                      {uploading ? "Uploading..." : "Tip: gunakan foto square agar rapi."}
+                    </div>
+                  </Field>
+                </div>
+              </div>
+            </div>
+
             <div className="grid gap-4 md:grid-cols-2">
               <Input
                 label="FULL NAME"
@@ -218,29 +371,56 @@ export default function AdminProfile() {
               </div>
 
               <button
-                disabled={saving || loading}
+                disabled={saving || loading || uploading}
                 className="group relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-500 via-violet-500 to-emerald-500 px-5 py-3 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(99,102,241,0.25)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <span className="relative z-10">{saving ? "Saving..." : "Save Changes"}</span>
+                <span className="relative z-10">
+                  {saving ? "Saving..." : "Save Changes"}
+                </span>
                 <span className="absolute inset-0 -translate-x-full bg-white/15 transition duration-700 group-hover:translate-x-0" />
               </button>
             </div>
           </form>
         </div>
 
-        {/* Preview card (pakai deferredForm) */}
+        {/* Preview card */}
         <div className="rounded-2xl border border-white/10 bg-black/20 p-5 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
           <div className="text-sm font-semibold text-white">Preview</div>
-          <p className="mt-1 text-xs text-white/45">Gambaran data profile yang tampil di halaman Home.</p>
+          <p className="mt-1 text-xs text-white/45">
+            Gambaran data profile yang tampil di halaman Home.
+          </p>
 
           <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="text-lg font-semibold text-white">{deferredForm.full_name || "—"}</div>
-            <div className="mt-1 text-sm text-white/70">{deferredForm.headline || "—"}</div>
-            <div className="mt-2 text-sm text-white/55">{deferredForm.location || "—"}</div>
+            <div className="flex items-center gap-3">
+              <div className="h-14 w-14 overflow-hidden rounded-2xl border border-white/10 bg-black/30">
+                {photoPreview ? (
+                  <img
+                    src={photoPreview}
+                    alt="preview"
+                    className="h-full w-full object-cover"
+                  />
+                ) : null}
+              </div>
+
+              <div className="min-w-0">
+                <div className="truncate text-lg font-semibold text-white">
+                  {deferredForm.full_name || "—"}
+                </div>
+                <div className="truncate text-sm text-white/70">
+                  {deferredForm.headline || "—"}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 text-sm text-white/55">
+              {deferredForm.location || "—"}
+            </div>
 
             <div className="my-4 h-px w-full bg-white/10" />
 
-            <div className="whitespace-pre-wrap text-sm text-white/70">{deferredForm.about || "—"}</div>
+            <div className="whitespace-pre-wrap text-sm text-white/70">
+              {deferredForm.about || "—"}
+            </div>
 
             <div className="my-4 h-px w-full bg-white/10" />
 
@@ -257,15 +437,21 @@ export default function AdminProfile() {
                 <span className="text-white/40">CV:</span>{" "}
                 <span className="text-white/80">{deferredForm.cv_url || "—"}</span>
               </div>
+              <div className="break-all">
+                <span className="text-white/40">Photo (path):</span>{" "}
+                <span className="text-white/80">{deferredForm.photo || "—"}</span>
+              </div>
             </div>
           </div>
 
           <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="text-xs font-medium tracking-widest text-white/50">SUGGESTED</div>
+            <div className="text-xs font-medium tracking-widest text-white/50">
+              SUGGESTED
+            </div>
             <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-white/60">
-              <li>Gunakan headline maksimal 1–2 baris.</li>
+              <li>Gunakan foto yang jelas & profesional.</li>
+              <li>Headline maksimal 1–2 baris.</li>
               <li>About 3–6 kalimat biar nyaman dibaca.</li>
-              <li>Pastikan email aktif untuk Contact.</li>
             </ul>
           </div>
         </div>

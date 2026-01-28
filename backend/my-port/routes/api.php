@@ -45,12 +45,16 @@ Route::prefix('v1')->group(function () {
         Route::get('profile', [ProfileController::class, 'show']);
         Route::put('profile', [ProfileController::class, 'update']);
 
+        Route::get('/admin/profile', [ProfileController::class, 'show']);
+        Route::put('/admin/profile', [ProfileController::class, 'update']);
+        Route::post('/admin/uploads/profile-photo', [UploadController::class, 'profilePhoto']);
+
+
         Route::get('tags', [TagController::class, 'index']);
         Route::apiResource('skills', SkillController::class);
         Route::apiResource('tags', TagController::class);
         
         Route::post('/uploads/project-image', [UploadController::class, 'projectImage']);
         
-
     });
 });
