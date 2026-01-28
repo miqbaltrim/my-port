@@ -21,10 +21,10 @@ class UploadController extends Controller
         $filename = (string) Str::uuid() . '.' . $ext;
 
         // storage/app/public/projects/xxx.jpg
-        $path = $file->storeAs($dir, $filename, 'public'); // projects/xxx.jpg
+        $path = $file->storeAs($dir, $filename, 'public');
 
-        // ✅ URL publik
-        $url = asset('storage/' . $path); // http://127.0.0.1:8000/storage/projects/xxx.jpg
+        // http://127.0.0.1:8000/storage/projects/xxx.jpg
+        $url = asset('storage/' . $path);
 
         return response()->json([
             'path' => $path,
@@ -32,7 +32,6 @@ class UploadController extends Controller
         ], 201);
     }
 
-    // ✅ TAMBAHAN: upload foto profile
     public function profilePhoto(Request $request)
     {
         $validated = $request->validate([
@@ -46,10 +45,10 @@ class UploadController extends Controller
         $filename = (string) Str::uuid() . '.' . $ext;
 
         // storage/app/public/profiles/xxx.jpg
-        $path = $file->storeAs($dir, $filename, 'public'); // profiles/xxx.jpg
+        $path = $file->storeAs($dir, $filename, 'public');
 
-        // ✅ URL publik
-        $url = asset('storage/' . $path); // http://127.0.0.1:8000/storage/profiles/xxx.jpg
+        // http://127.0.0.1:8000/storage/profiles/xxx.jpg
+        $url = asset('storage/' . $path);
 
         return response()->json([
             'path' => $path,
